@@ -37,8 +37,8 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         (request, callback) => {
             desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
                 const prefs = storage.getPreferences();
-                const displayIndex = prefs.captureDisplayIndex || 0;
-                const source = sources[displayIndex] || sources[0];
+                const savedId = prefs.captureDisplayId;
+                const source = (savedId && sources.find(s => s.id === savedId)) || sources[0];
                 callback({ video: source, audio: 'loopback' });
             });
         },
