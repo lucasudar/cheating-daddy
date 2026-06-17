@@ -36,10 +36,13 @@ function createWindow(sendToRenderer, geminiSessionRef) {
     session.defaultSession.setDisplayMediaRequestHandler(
         (request, callback) => {
             desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
-                callback({ video: sources[0], audio: 'loopback' });
+                const prefs = storage.getPreferences();
+                const savedId = prefs.captureDisplayId;
+                const source = (savedId && sources.find(s => s.id === savedId)) || sources[0];
+                callback({ video: source, audio: 'loopback' });
             });
         },
-        { useSystemPicker: true }
+        { useSystemPicker: false }
     );
 
     mainWindow.setContentProtection(true);
@@ -100,6 +103,7 @@ function getDefaultKeybinds() {
         toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
         toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
         nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
+        manualScreenshot: isMac ? 'Cmd+Shift+S' : 'Ctrl+Shift+S',
         previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
         nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
         scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
@@ -210,6 +214,25 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
             console.log(`Registered nextStep: ${keybinds.nextStep}`);
         } catch (error) {
             console.error(`Failed to register nextStep (${keybinds.nextStep}):`, error);
+        }
+    }
+
+    // Register manual screenshot shortcut (capture selected screen on demand)
+    if (keybinds.manualScreenshot) {
+        try {
+            globalShortcut.register(keybinds.manualScreenshot, async () => {
+                console.log('Manual screenshot shortcut triggered');
+                try {
+                    mainWindow.webContents.executeJavaScript(`
+                        cheatingDaddy.handleShortcut('manual-screenshot');
+                    `);
+                } catch (error) {
+                    console.error('Error handling manual screenshot shortcut:', error);
+                }
+            });
+            console.log(`Registered manualScreenshot: ${keybinds.manualScreenshot}`);
+        } catch (error) {
+            console.error(`Failed to register manualScreenshot (${keybinds.manualScreenshot}):`, error);
         }
     }
 

@@ -216,7 +216,10 @@ export class CustomizeView extends LitElement {
         this.audioMode = 'speaker_only';
         this.customPrompt = '';
         this.theme = 'dark';
+        this.captureDisplayId = '';
+        this.availableDisplays = [];
         this._loadFromStorage();
+        this._loadDisplaySources();
     }
 
     getThemes() {
@@ -232,6 +235,7 @@ export class CustomizeView extends LitElement {
             this.audioMode = prefs.audioMode ?? 'speaker_only';
             this.customPrompt = prefs.customPrompt ?? '';
             this.theme = prefs.theme ?? 'dark';
+            this.captureDisplayId = prefs.captureDisplayId ?? '';
             if (keybinds) {
                 this.keybinds = { ...this.getDefaultKeybinds(), ...keybinds };
             }
@@ -299,6 +303,7 @@ export class CustomizeView extends LitElement {
             toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
             toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
             nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
+            manualScreenshot: isMac ? 'Cmd+Shift+S' : 'Ctrl+Shift+S',
             previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
             nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
@@ -315,6 +320,7 @@ export class CustomizeView extends LitElement {
             { key: 'toggleVisibility', name: 'Toggle Visibility', description: 'Show or hide the app window' },
             { key: 'toggleClickThrough', name: 'Toggle Click-through', description: 'Enable or disable click-through mode' },
             { key: 'nextStep', name: 'Ask Next Step', description: 'Take screenshot and ask for next step' },
+            { key: 'manualScreenshot', name: 'Take Screenshot', description: 'Capture the selected screen on demand' },
             { key: 'previousResponse', name: 'Previous Response', description: 'Move to previous AI response' },
             { key: 'nextResponse', name: 'Next Response', description: 'Move to next AI response' },
             { key: 'scrollUp', name: 'Scroll Response Up', description: 'Scroll response content upward' },
@@ -359,6 +365,25 @@ export class CustomizeView extends LitElement {
         this.audioMode = e.target.value;
         await cheatingDaddy.storage.updatePreference('audioMode', this.audioMode);
         this.requestUpdate();
+    }
+
+    async _loadDisplaySources() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            const result = await ipcRenderer.invoke('get-display-sources');
+            if (result.success) {
+                this.availableDisplays = result.data;
+                this.requestUpdate();
+            }
+        } catch (error) {
+            console.error('Error loading display sources:', error);
+        }
+    }
+
+    async handleCaptureDisplaySelect(e) {
+        this.captureDisplayId = e.target.value;
+        await cheatingDaddy.storage.updatePreference('captureDisplayId', this.captureDisplayId);
     }
 
     async handleThemeChange(e) {
@@ -490,6 +515,7 @@ export class CustomizeView extends LitElement {
                 backgroundTransparency: 0.8,
                 googleSearchEnabled: false,
                 theme: 'dark',
+                captureDisplayId: '',
             };
             for (const [key, value] of Object.entries(defaults)) {
                 await cheatingDaddy.storage.updatePreference(key, value);
@@ -513,6 +539,7 @@ export class CustomizeView extends LitElement {
             this.googleSearchEnabled = defaults.googleSearchEnabled;
             this.customPrompt = defaults.customPrompt;
             this.theme = defaults.theme;
+            this.captureDisplayId = defaults.captureDisplayId;
 
             // Notify parent callbacks
             this.onProfileChange(defaults.selectedProfile);
@@ -589,6 +616,15 @@ export class CustomizeView extends LitElement {
                             <option value="high">High Quality</option>
                             <option value="medium">Medium Quality</option>
                             <option value="low">Low Quality</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Capture Display</label>
+                        <select class="control" .value=${this.captureDisplayId} @change=${this.handleCaptureDisplaySelect}>
+                            ${this.availableDisplays.length > 0
+                                ? this.availableDisplays.map(d => html`<option value=${d.id}>${d.name}</option>`)
+                                : html`<option value="">Display 1 (default)</option>`
+                            }
                         </select>
                     </div>
                 </div>
