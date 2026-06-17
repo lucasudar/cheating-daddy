@@ -13,12 +13,13 @@ module.exports = {
         // for macos signing
         // also fuck apple
         // --- ad-hoc signing (no Apple Developer account needed) ---
-        // Signs the app with an ad-hoc identity ('-') so it has a real,
-        // self-consistent code signature. Combined with the postPackage hook
-        // below (which signs the bundled SystemAudioDump helper with the same
-        // ad-hoc identity + entitlements), this keeps the Screen Recording
-        // permission stable across rebuilds and stops macOS from creating
-        // duplicate TCC entries for the helper binary.
+        // osxSign with identity '-' deep-signs the whole bundle (Electron
+        // Framework, helpers, and the bundled SystemAudioDump) in the correct
+        // inside-out order, giving a self-consistent ad-hoc signature. This
+        // keeps the Screen Recording permission stable across rebuilds.
+        // NOTE: do NOT re-sign nested binaries afterward with `codesign --deep`
+        // — that invalidates the framework signature and macOS kills the app
+        // with SIGKILL (Code Signature Invalid). Let osxSign do the whole job.
         osxSign: {
             identity: '-',
             optionsForFile: () => ({
@@ -81,38 +82,40 @@ module.exports = {
         }),
     ],
     hooks: {
-        // macOS only: ensure the bundled SystemAudioDump helper is ad-hoc signed
-        // with the same entitlements, then RE-SIGN the whole .app so the outer
-        // bundle seal stays valid (signing a nested binary after osxSign would
-        // otherwise invalidate the app signature and cause a launch crash).
+        // macOS only: ad-hoc sign the bundled SystemAudioDump helper BEFORE
+        // osxSign seals the whole bundle. osxSign runs at the very end of
+        // packaging, so signing the helper here (during copy) means the final
+        // osxSign pass wraps an already-signed helper in the correct order.
+        // We must NOT sign anything AFTER osxSign (that invalidates the
+        // Electron Framework signature -> SIGKILL Code Signature Invalid).
         // SystemAudioDump uses ScreenCaptureKit and needs Screen Recording
-        // permission; signing it consistently stops macOS from registering it
-        // as a separate, duplicate TCC entry.
-        postPackage: async (_forgeConfig, options) => {
-            if (options.platform !== 'darwin') return;
+        // permission; signing it consistently helps macOS keep one TCC entry.
+        packageAfterCopy: async (_forgeConfig, buildPath, _electronVersion, platform) => {
+            if (platform !== 'darwin') return;
             const path = require('node:path');
+            const fs = require('node:fs');
             const { execFileSync } = require('node:child_process');
             const entitlements = path.resolve(__dirname, 'entitlements.plist');
-            for (const outputPath of options.outputPaths) {
-                const appPath = path.join(outputPath, 'Cheating Daddy.app');
-                const helper = path.join(appPath, 'Contents', 'Resources', 'SystemAudioDump');
-                try {
-                    // 1. Sign the nested helper first (inside-out signing order)
-                    execFileSync(
-                        'codesign',
-                        ['--force', '--sign', '-', '--entitlements', entitlements, helper],
-                        { stdio: 'inherit' }
-                    );
-                    // 2. Re-seal the whole app bundle so its signature stays valid
-                    execFileSync(
-                        'codesign',
-                        ['--force', '--deep', '--sign', '-', '--entitlements', entitlements, appPath],
-                        { stdio: 'inherit' }
-                    );
-                    console.log('[postPackage] ad-hoc signed SystemAudioDump + re-sealed app:', appPath);
-                } catch (err) {
-                    console.warn('[postPackage] codesign step failed:', err.message);
-                }
+            // extraResource lands at <buildPath>/../Resources or inside Resources;
+            // search for the helper under the build path.
+            const candidates = [
+                path.join(buildPath, 'SystemAudioDump'),
+                path.join(buildPath, '..', 'Resources', 'SystemAudioDump'),
+            ];
+            const helper = candidates.find(p => fs.existsSync(p));
+            if (!helper) {
+                console.warn('[packageAfterCopy] SystemAudioDump not found yet; osxSign will sign it in the final pass');
+                return;
+            }
+            try {
+                execFileSync(
+                    'codesign',
+                    ['--force', '--sign', '-', '--entitlements', entitlements, helper],
+                    { stdio: 'inherit' }
+                );
+                console.log('[packageAfterCopy] ad-hoc signed SystemAudioDump:', helper);
+            } catch (err) {
+                console.warn('[packageAfterCopy] failed to sign SystemAudioDump:', err.message);
             }
         },
     },
