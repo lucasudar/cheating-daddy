@@ -265,9 +265,45 @@ function setupGeneralIpcHandlers() {
 
     ipcMain.handle('get-display-sources', async () => {
         try {
-            const { desktopCapturer, screen } = require('electron');
+            const { desktopCapturer, screen, systemPreferences } = require('electron');
+
+            // On macOS, desktopCapturer.getSources throws "Failed to get sources"
+            // when Screen Recording permission has not been granted. Detect that
+            // up front so the UI can tell the user instead of silently showing
+            // only the default display.
+            let screenPermission = 'unknown';
+            if (process.platform === 'darwin' && typeof systemPreferences.getMediaAccessStatus === 'function') {
+                try {
+                    screenPermission = systemPreferences.getMediaAccessStatus('screen');
+                } catch (e) {
+                    screenPermission = 'unknown';
+                }
+                console.log(`[display-sources] macOS Screen Recording permission = ${screenPermission}`);
+            }
+
+            // getSources can transiently fail right after launch / on first call.
+            // Retry a couple of times with a lightweight options set (no
+            // thumbnails) which is more reliable for enumeration.
+            const getSourcesWithRetry = async () => {
+                let lastErr;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        return await desktopCapturer.getSources({
+                            types: ['screen'],
+                            thumbnailSize: { width: 0, height: 0 },
+                            fetchWindowIcons: false,
+                        });
+                    } catch (e) {
+                        lastErr = e;
+                        console.warn(`[display-sources] getSources attempt ${attempt} failed: ${e.message}`);
+                        await new Promise(r => setTimeout(r, 250));
+                    }
+                }
+                throw lastErr;
+            };
+
             const [sources, displays] = await Promise.all([
-                desktopCapturer.getSources({ types: ['screen'] }),
+                getSourcesWithRetry(),
                 Promise.resolve(screen.getAllDisplays()),
             ]);
             console.log(
@@ -305,10 +341,42 @@ function setupGeneralIpcHandlers() {
                 const stableId = s.display_id ? String(s.display_id) : s.id;
                 return { index: i, name, id: stableId, sourceId: s.id, displayId: s.display_id };
             });
-            return { success: true, data };
+            return { success: true, data, permission: screenPermission };
         } catch (error) {
             console.error('Error getting display sources:', error);
-            return { success: false, error: error.message };
+            // Best-effort fallback: even if desktopCapturer failed, screen module
+            // can still enumerate monitors. Offer them so the dropdown is not
+            // stuck on a single default entry. Capture itself still needs the
+            // permission, but at least the user sees what exists.
+            let fallbackData = [];
+            let permission = 'unknown';
+            try {
+                const { screen, systemPreferences } = require('electron');
+                if (process.platform === 'darwin' && typeof systemPreferences.getMediaAccessStatus === 'function') {
+                    permission = systemPreferences.getMediaAccessStatus('screen');
+                }
+                const displays = screen.getAllDisplays();
+                fallbackData = displays.map((d, i) => {
+                    const { width, height } = d.bounds;
+                    const tag = d.internal ? 'Built-in' : 'External';
+                    return {
+                        index: i,
+                        name: `${tag}: ${d.label || 'Display'} (${width}\u00d7${height})`,
+                        id: String(d.id),
+                        sourceId: null,
+                        displayId: String(d.id),
+                    };
+                });
+            } catch (e) {
+                /* ignore */
+            }
+            return {
+                success: false,
+                error: error.message,
+                permission,
+                data: fallbackData,
+                needsScreenPermission: process.platform === 'darwin' && permission !== 'granted',
+            };
         }
     });
 

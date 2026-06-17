@@ -385,7 +385,19 @@ export class CustomizeView extends LitElement {
                 console.log(`[display-sources] renderer received ${result.data.length} screen(s):`, result.data);
                 this.requestUpdate();
             } else {
-                console.warn('[display-sources] get-display-sources failed:', result.error);
+                console.warn('[display-sources] get-display-sources failed:', result.error, '| permission:', result.permission);
+                // Use the screen.getAllDisplays() fallback so the dropdown still
+                // lists monitors even when desktopCapturer failed.
+                if (Array.isArray(result.data) && result.data.length > 0) {
+                    this.availableDisplays = result.data;
+                }
+                if (result.needsScreenPermission) {
+                    console.warn(
+                        '[display-sources] macOS Screen Recording permission is NOT granted. ' +
+                            'System Settings > Privacy & Security > Screen Recording > enable this app, then fully restart it.'
+                    );
+                }
+                this.requestUpdate();
             }
         } catch (error) {
             console.error('Error loading display sources:', error);
