@@ -780,9 +780,17 @@ function handleShortcut(shortcutKey) {
             captureManualScreenshot();
         }
     } else if (shortcutKey === 'manual-screenshot') {
-        // Dedicated screenshot hotkey: capture on demand whenever a session is active
+        // Dedicated screenshot hotkey: behave exactly like clicking the
+        // "Analyze Screen" button so the user gets the same visual feedback
+        // (the analyzing waveform animation) instead of a silent capture.
         if (currentView !== 'main') {
-            captureManualScreenshot();
+            const assistantView = cheatingDaddyApp.shadowRoot?.querySelector('assistant-view');
+            if (assistantView && typeof assistantView.handleScreenAnswer === 'function') {
+                assistantView.handleScreenAnswer();
+            } else {
+                // Fallback: capture without animation if the view isn't reachable
+                captureManualScreenshot();
+            }
         } else {
             console.log('Manual screenshot ignored: no active session (main view)');
         }
