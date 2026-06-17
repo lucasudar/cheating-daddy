@@ -284,7 +284,13 @@ function setupGeneralIpcHandlers() {
                 } else {
                     name = s.name || `Display ${i + 1}`;
                 }
-                return { index: i, name, id: s.id };
+                // Use display_id as the stable identifier for the dropdown value.
+                // desktopCapturer source ids ("screen:1:0") are NOT stable across
+                // getSources() calls / reconnects, but display_id maps to
+                // screen.getAllDisplays().id and stays stable. Fall back to the
+                // source id only when display_id is unavailable.
+                const stableId = s.display_id ? String(s.display_id) : s.id;
+                return { index: i, name, id: stableId, sourceId: s.id, displayId: s.display_id };
             });
             return { success: true, data };
         } catch (error) {
