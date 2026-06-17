@@ -76,46 +76,42 @@ module.exports = {
             [FuseV1Options.EnableCookieEncryption]: true,
             [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
             [FuseV1Options.EnableNodeCliInspectArguments]: false,
-            [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+            [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
             [FuseV1Options.OnlyLoadAppFromAsar]: true,
         }),
     ],
     hooks: {
-        // Ad-hoc sign the bundled SystemAudioDump helper with the same identity
-        // and entitlements as the app. SystemAudioDump uses ScreenCaptureKit
-        // (which requires Screen Recording permission); signing it consistently
-        // prevents macOS from registering it as a separate, duplicate TCC entry.
-        // Runs only on macOS; no-op elsewhere.
+        // macOS only: ensure the bundled SystemAudioDump helper is ad-hoc signed
+        // with the same entitlements, then RE-SIGN the whole .app so the outer
+        // bundle seal stays valid (signing a nested binary after osxSign would
+        // otherwise invalidate the app signature and cause a launch crash).
+        // SystemAudioDump uses ScreenCaptureKit and needs Screen Recording
+        // permission; signing it consistently stops macOS from registering it
+        // as a separate, duplicate TCC entry.
         postPackage: async (_forgeConfig, options) => {
             if (options.platform !== 'darwin') return;
             const path = require('node:path');
             const { execFileSync } = require('node:child_process');
+            const entitlements = path.resolve(__dirname, 'entitlements.plist');
             for (const outputPath of options.outputPaths) {
-                const helper = path.join(
-                    outputPath,
-                    'Cheating Daddy.app',
-                    'Contents',
-                    'Resources',
-                    'SystemAudioDump'
-                );
+                const appPath = path.join(outputPath, 'Cheating Daddy.app');
+                const helper = path.join(appPath, 'Contents', 'Resources', 'SystemAudioDump');
                 try {
+                    // 1. Sign the nested helper first (inside-out signing order)
                     execFileSync(
                         'codesign',
-                        [
-                            '--force',
-                            '--sign',
-                            '-',
-                            '--entitlements',
-                            path.resolve(__dirname, 'entitlements.plist'),
-                            '--options',
-                            'runtime',
-                            helper,
-                        ],
+                        ['--force', '--sign', '-', '--entitlements', entitlements, helper],
                         { stdio: 'inherit' }
                     );
-                    console.log('[postPackage] ad-hoc signed SystemAudioDump:', helper);
+                    // 2. Re-seal the whole app bundle so its signature stays valid
+                    execFileSync(
+                        'codesign',
+                        ['--force', '--deep', '--sign', '-', '--entitlements', entitlements, appPath],
+                        { stdio: 'inherit' }
+                    );
+                    console.log('[postPackage] ad-hoc signed SystemAudioDump + re-sealed app:', appPath);
                 } catch (err) {
-                    console.warn('[postPackage] failed to sign SystemAudioDump:', err.message);
+                    console.warn('[postPackage] codesign step failed:', err.message);
                 }
             }
         },
