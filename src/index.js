@@ -19,10 +19,28 @@ app.whenReady().then(async () => {
     // Initialize storage (checks version, resets if needed)
     storage.initializeStorage();
 
-    // Trigger screen recording permission prompt on macOS if not already granted
+    // On macOS, check Screen Recording permission. desktopCapturer throws
+    // "Failed to get sources" when it is not granted, so probe the status
+    // explicitly and trigger the system prompt. The first getSources() call
+    // is what makes the app appear in System Settings > Screen Recording.
     if (process.platform === 'darwin') {
-        const { desktopCapturer } = require('electron');
-        desktopCapturer.getSources({ types: ['screen'] }).catch(() => {});
+        const { desktopCapturer, systemPreferences } = require('electron');
+        try {
+            const status =
+                typeof systemPreferences.getMediaAccessStatus === 'function'
+                    ? systemPreferences.getMediaAccessStatus('screen')
+                    : 'unknown';
+            console.log(`[startup] Screen Recording permission = ${status}`);
+        } catch (e) {
+            console.warn('[startup] could not read screen permission:', e.message);
+        }
+        // Probe to register the app in the Screen Recording list / trigger prompt.
+        // Swallow the rejection so it does not surface as UnhandledPromiseRejection.
+        try {
+            await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+        } catch (e) {
+            console.warn('[startup] screen probe failed (permission likely denied):', e && e.message);
+        }
     }
 
     createMainWindow();
@@ -377,6 +395,21 @@ function setupGeneralIpcHandlers() {
                 data: fallbackData,
                 needsScreenPermission: process.platform === 'darwin' && permission !== 'granted',
             };
+        }
+    });
+
+    ipcMain.handle('open-screen-recording-settings', async () => {
+        try {
+            if (process.platform === 'darwin') {
+                const { shell } = require('electron');
+                await shell.openExternal(
+                    'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+                );
+                return { success: true };
+            }
+            return { success: false, error: 'not macOS' };
+        } catch (error) {
+            return { success: false, error: error.message };
         }
     });
 

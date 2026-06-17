@@ -218,6 +218,7 @@ export class CustomizeView extends LitElement {
         this.theme = 'dark';
         this.captureDisplayId = '';
         this.availableDisplays = [];
+        this.screenPermission = 'unknown';
         this._loadFromStorage();
         this._loadDisplaySources();
     }
@@ -380,6 +381,7 @@ export class CustomizeView extends LitElement {
         try {
             const { ipcRenderer } = window.require('electron');
             const result = await ipcRenderer.invoke('get-display-sources');
+            this.screenPermission = result.permission || 'unknown';
             if (result.success) {
                 this.availableDisplays = result.data;
                 console.log(`[display-sources] renderer received ${result.data.length} screen(s):`, result.data);
@@ -401,6 +403,16 @@ export class CustomizeView extends LitElement {
             }
         } catch (error) {
             console.error('Error loading display sources:', error);
+        }
+    }
+
+    async _openScreenRecordingSettings() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('open-screen-recording-settings');
+        } catch (err) {
+            console.error('Failed to open Screen Recording settings:', err);
         }
     }
 
@@ -660,6 +672,22 @@ export class CustomizeView extends LitElement {
                             }
                         </select>
                     </div>
+                    ${this.screenPermission === 'denied'
+                        ? html`<div
+                              style="margin-top:var(--space-sm);padding:8px 10px;border-radius:6px;background:rgba(255,80,80,0.12);border:1px solid rgba(255,80,80,0.4);font-size:12px;line-height:1.4;"
+                          >
+                              ⚠️ Screen Recording permission is <b>denied</b>. Displays cannot be
+                              listed or captured until you grant it.
+                              <div style="margin-top:6px;">
+                                  <button class="control" style="cursor:pointer;" @click=${this._openScreenRecordingSettings}>
+                                      Open Screen Recording settings
+                                  </button>
+                              </div>
+                              <div style="margin-top:6px;opacity:0.8;">
+                                  Enable this app (or your terminal in dev), then fully quit &amp; reopen.
+                              </div>
+                          </div>`
+                        : ''}
                 </div>
             </section>
         `;
