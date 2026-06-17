@@ -779,6 +779,13 @@ function handleShortcut(shortcutKey) {
         } else {
             captureManualScreenshot();
         }
+    } else if (shortcutKey === 'manual-screenshot') {
+        // Dedicated screenshot hotkey: capture on demand whenever a session is active
+        if (currentView !== 'main') {
+            captureManualScreenshot();
+        } else {
+            console.log('Manual screenshot ignored: no active session (main view)');
+        }
     }
 }
 
