@@ -270,6 +270,19 @@ function setupGeneralIpcHandlers() {
                 desktopCapturer.getSources({ types: ['screen'] }),
                 Promise.resolve(screen.getAllDisplays()),
             ]);
+            console.log(
+                `[display-sources] desktopCapturer screens=${sources.length}, screen.getAllDisplays()=${displays.length}`
+            );
+            console.log(
+                '[display-sources] getSources: ' +
+                    sources.map(s => `{id=${s.id} display_id=${s.display_id} name=${s.name}}`).join(', ')
+            );
+            console.log(
+                '[display-sources] getAllDisplays: ' +
+                    displays
+                        .map(d => `{id=${d.id} internal=${d.internal} bounds=${d.bounds.width}x${d.bounds.height}}`)
+                        .join(', ')
+            );
             const displayById = new Map(displays.map(d => [String(d.id), d]));
             const data = sources.map((s, i) => {
                 const display = displayById.get(String(s.display_id));

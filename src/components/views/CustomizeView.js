@@ -222,6 +222,14 @@ export class CustomizeView extends LitElement {
         this._loadDisplaySources();
     }
 
+    connectedCallback() {
+        super.connectedCallback();
+        // Re-query screens every time Settings is opened, so displays that
+        // were connected (or Screen Recording permission granted) after the
+        // app launched show up without needing a restart.
+        this._loadDisplaySources();
+    }
+
     getThemes() {
         return cheatingDaddy.theme.getAll();
     }
@@ -374,7 +382,10 @@ export class CustomizeView extends LitElement {
             const result = await ipcRenderer.invoke('get-display-sources');
             if (result.success) {
                 this.availableDisplays = result.data;
+                console.log(`[display-sources] renderer received ${result.data.length} screen(s):`, result.data);
                 this.requestUpdate();
+            } else {
+                console.warn('[display-sources] get-display-sources failed:', result.error);
             }
         } catch (error) {
             console.error('Error loading display sources:', error);
