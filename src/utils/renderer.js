@@ -3,6 +3,7 @@ const { ipcRenderer } = require('electron');
 
 let mediaStream = null;
 let screenshotInterval = null;
+let lastScreenshotIntervalSeconds = 5;
 let audioContext = null;
 let audioProcessor = null;
 let micAudioProcessor = null;
@@ -198,6 +199,8 @@ ipcRenderer.on('update-status', (event, status) => {
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
     // Store the image quality for manual screenshots
     currentImageQuality = imageQuality;
+    // Remember the interval so restartCapture() can preserve it
+    lastScreenshotIntervalSeconds = screenshotIntervalSeconds;
 
     // Refresh preferences cache
     await loadPreferencesCache();
@@ -705,6 +708,22 @@ function stopCapture() {
     offscreenContext = null;
 }
 
+// Restart the screen capture stream so a newly selected capture display
+// takes effect immediately (the media stream is bound to a display at
+// getDisplayMedia time, so changing the preference requires re-capturing).
+async function restartCapture() {
+    if (!mediaStream && !screenshotInterval) {
+        // No active capture session; nothing to restart.
+        return false;
+    }
+    const interval = lastScreenshotIntervalSeconds;
+    const quality = currentImageQuality;
+    stopCapture();
+    await startCapture(interval, quality);
+    console.log('Capture restarted to apply new display selection');
+    return true;
+}
+
 // Send text message to Gemini
 async function sendTextMessage(text) {
     if (!text || text.trim().length === 0) {
@@ -1046,6 +1065,7 @@ const cheatingDaddy = {
     initializeLocal,
     startCapture,
     stopCapture,
+    restartCapture,
     sendTextMessage,
     handleShortcut,
 

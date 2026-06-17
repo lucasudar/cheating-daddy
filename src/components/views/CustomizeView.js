@@ -384,6 +384,16 @@ export class CustomizeView extends LitElement {
     async handleCaptureDisplaySelect(e) {
         this.captureDisplayId = e.target.value;
         await cheatingDaddy.storage.updatePreference('captureDisplayId', this.captureDisplayId);
+        // If a capture session is already running, restart it so the new
+        // display selection takes effect immediately (otherwise the old
+        // media stream keeps capturing the previously selected screen).
+        if (typeof cheatingDaddy.restartCapture === 'function') {
+            try {
+                await cheatingDaddy.restartCapture();
+            } catch (err) {
+                console.warn('Failed to restart capture after display change:', err);
+            }
+        }
     }
 
     async handleThemeChange(e) {
