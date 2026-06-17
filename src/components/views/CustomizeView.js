@@ -227,7 +227,10 @@ export class CustomizeView extends LitElement {
         super.connectedCallback();
         // Re-query screens every time Settings is opened, so displays that
         // were connected (or Screen Recording permission granted) after the
-        // app launched show up without needing a restart.
+        // app launched show up without needing a restart. Also re-read the
+        // saved selection so the dropdown reflects the persisted value when
+        // returning to Settings.
+        this._loadFromStorage();
         this._loadDisplaySources();
     }
 
@@ -665,10 +668,12 @@ export class CustomizeView extends LitElement {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Capture Display</label>
-                        <select class="control" .value=${this.captureDisplayId} @change=${this.handleCaptureDisplaySelect}>
+                        <select class="control" @change=${this.handleCaptureDisplaySelect}>
                             ${this.availableDisplays.length > 0
-                                ? this.availableDisplays.map(d => html`<option value=${d.id}>${d.name}</option>`)
-                                : html`<option value="">Display 1 (default)</option>`
+                                ? this.availableDisplays.map(
+                                      d => html`<option value=${d.id} ?selected=${String(d.id) === String(this.captureDisplayId)}>${d.name}</option>`
+                                  )
+                                : html`<option value="" ?selected=${!this.captureDisplayId}>Display 1 (default)</option>`
                             }
                         </select>
                     </div>
