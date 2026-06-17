@@ -12,14 +12,19 @@ module.exports = {
         // use `security find-identity -v -p codesigning` to find your identity
         // for macos signing
         // also fuck apple
-        // osxSign: {
-        //    identity: '<paste your identity here>',
-        //   optionsForFile: (filePath) => {
-        //       return {
-        //           entitlements: 'entitlements.plist',
-        //       };
-        //   },
-        // },
+        // --- ad-hoc signing (no Apple Developer account needed) ---
+        // Signs the app with an ad-hoc identity ('-') so it has a real,
+        // self-consistent code signature. Combined with the postPackage hook
+        // below (which signs the bundled SystemAudioDump helper with the same
+        // ad-hoc identity + entitlements), this keeps the Screen Recording
+        // permission stable across rebuilds and stops macOS from creating
+        // duplicate TCC entries for the helper binary.
+        osxSign: {
+            identity: '-',
+            optionsForFile: () => ({
+                entitlements: 'entitlements.plist',
+            }),
+        },
         // notarize if off cuz i ran this for 6 hours and it still didnt finish
         // osxNotarize: {
         //    appleId: 'your apple id',
@@ -75,4 +80,44 @@ module.exports = {
             [FuseV1Options.OnlyLoadAppFromAsar]: true,
         }),
     ],
+    hooks: {
+        // Ad-hoc sign the bundled SystemAudioDump helper with the same identity
+        // and entitlements as the app. SystemAudioDump uses ScreenCaptureKit
+        // (which requires Screen Recording permission); signing it consistently
+        // prevents macOS from registering it as a separate, duplicate TCC entry.
+        // Runs only on macOS; no-op elsewhere.
+        postPackage: async (_forgeConfig, options) => {
+            if (options.platform !== 'darwin') return;
+            const path = require('node:path');
+            const { execFileSync } = require('node:child_process');
+            for (const outputPath of options.outputPaths) {
+                const helper = path.join(
+                    outputPath,
+                    'Cheating Daddy.app',
+                    'Contents',
+                    'Resources',
+                    'SystemAudioDump'
+                );
+                try {
+                    execFileSync(
+                        'codesign',
+                        [
+                            '--force',
+                            '--sign',
+                            '-',
+                            '--entitlements',
+                            path.resolve(__dirname, 'entitlements.plist'),
+                            '--options',
+                            'runtime',
+                            helper,
+                        ],
+                        { stdio: 'inherit' }
+                    );
+                    console.log('[postPackage] ad-hoc signed SystemAudioDump:', helper);
+                } catch (err) {
+                    console.warn('[postPackage] failed to sign SystemAudioDump:', err.message);
+                }
+            }
+        },
+    },
 };

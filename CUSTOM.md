@@ -23,6 +23,20 @@
   `src/utils/renderer.js` (`handleShortcut('manual-screenshot')` → `handleScreenAnswer()`),
   `src/components/views/CustomizeView.js` (keybind в Settings).
 
+## 3. Ad-hoc подпись сборки (macOS)
+В `forge.config.js` включена ad-hoc подпись (`osxSign: { identity: '-' }`) +
+`postPackage` hook, который той же ad-hoc идентичностью + entitlements подписывает
+вложенный `SystemAudioDump`.
+
+Зачем: `SystemAudioDump` использует ScreenCaptureKit (нужен Screen Recording
+permission). Без согласованной подписи macOS заводил **отдельную** TCC-запись для
+хелпера (дубль «Cheating Daddy.app» с иконкой-человечком) и сбрасывал permission
+при каждой пересборке. Ad-hoc подпись даёт стабильную идентичность → дубли
+перестают плодиться, permission держится между пересборками.
+
+Apple Developer аккаунт не нужен. Gatekeeper при первом запуске всё ещё может
+ругаться — снять карантин: `xattr -cr "/Applications/Cheating Daddy.app"`.
+
 ## Обновление из upstream
 Когда выходит новая версия оригинала:
 
