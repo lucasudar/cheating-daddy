@@ -218,6 +218,18 @@ export class CustomizeView extends LitElement {
         this.theme = 'dark';
         this.captureDisplayId = '';
         this.availableDisplays = [];
+        this.screenPermission = 'unknown';
+        this._loadFromStorage();
+        this._loadDisplaySources();
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        // Re-query screens every time Settings is opened, so displays that
+        // were connected (or Screen Recording permission granted) after the
+        // app launched show up without needing a restart. Also re-read the
+        // saved selection so the dropdown reflects the persisted value when
+        // returning to Settings.
         this._loadFromStorage();
         this._loadDisplaySources();
     }
@@ -372,12 +384,38 @@ export class CustomizeView extends LitElement {
         try {
             const { ipcRenderer } = window.require('electron');
             const result = await ipcRenderer.invoke('get-display-sources');
+            this.screenPermission = result.permission || 'unknown';
             if (result.success) {
                 this.availableDisplays = result.data;
+                console.log(`[display-sources] renderer received ${result.data.length} screen(s):`, result.data);
+                this.requestUpdate();
+            } else {
+                console.warn('[display-sources] get-display-sources failed:', result.error, '| permission:', result.permission);
+                // Use the screen.getAllDisplays() fallback so the dropdown still
+                // lists monitors even when desktopCapturer failed.
+                if (Array.isArray(result.data) && result.data.length > 0) {
+                    this.availableDisplays = result.data;
+                }
+                if (result.needsScreenPermission) {
+                    console.warn(
+                        '[display-sources] macOS Screen Recording permission is NOT granted. ' +
+                            'System Settings > Privacy & Security > Screen Recording > enable this app, then fully restart it.'
+                    );
+                }
                 this.requestUpdate();
             }
         } catch (error) {
             console.error('Error loading display sources:', error);
+        }
+    }
+
+    async _openScreenRecordingSettings() {
+        if (!window.require) return;
+        try {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('open-screen-recording-settings');
+        } catch (err) {
+            console.error('Failed to open Screen Recording settings:', err);
         }
     }
 
@@ -630,13 +668,31 @@ export class CustomizeView extends LitElement {
                     </div>
                     <div class="form-group">
                         <label class="form-label">Capture Display</label>
-                        <select class="control" .value=${this.captureDisplayId} @change=${this.handleCaptureDisplaySelect}>
+                        <select class="control" @change=${this.handleCaptureDisplaySelect}>
                             ${this.availableDisplays.length > 0
-                                ? this.availableDisplays.map(d => html`<option value=${d.id}>${d.name}</option>`)
-                                : html`<option value="">Display 1 (default)</option>`
+                                ? this.availableDisplays.map(
+                                      d => html`<option value=${d.id} ?selected=${String(d.id) === String(this.captureDisplayId)}>${d.name}</option>`
+                                  )
+                                : html`<option value="" ?selected=${!this.captureDisplayId}>Display 1 (default)</option>`
                             }
                         </select>
                     </div>
+                    ${this.screenPermission === 'denied'
+                        ? html`<div
+                              style="margin-top:var(--space-sm);padding:8px 10px;border-radius:6px;background:rgba(255,80,80,0.12);border:1px solid rgba(255,80,80,0.4);font-size:12px;line-height:1.4;"
+                          >
+                              ⚠️ Screen Recording permission is <b>denied</b>. Displays cannot be
+                              listed or captured until you grant it.
+                              <div style="margin-top:6px;">
+                                  <button class="control" style="cursor:pointer;" @click=${this._openScreenRecordingSettings}>
+                                      Open Screen Recording settings
+                                  </button>
+                              </div>
+                              <div style="margin-top:6px;opacity:0.8;">
+                                  Enable this app (or your terminal in dev), then fully quit &amp; reopen.
+                              </div>
+                          </div>`
+                        : ''}
                 </div>
             </section>
         `;

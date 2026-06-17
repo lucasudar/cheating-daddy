@@ -38,9 +38,21 @@ function createWindow(sendToRenderer, geminiSessionRef) {
             desktopCapturer.getSources({ types: ['screen'] }).then(sources => {
                 const prefs = storage.getPreferences();
                 const savedId = prefs.captureDisplayId;
-                const source = (savedId && sources.find(s => s.id === savedId)) || sources[0];
+                // Prefer matching by the stable display_id (what the dropdown now
+                // stores). Fall back to the legacy source-id match for any
+                // preference saved before this change, then to sources[0].
+                const source =
+                    (savedId && sources.find(s => String(s.display_id) === String(savedId))) ||
+                    (savedId && sources.find(s => s.id === savedId)) ||
+                    sources[0];
                 console.log(
-                    `[capture] requested display id=${savedId || '(none)'} -> using source id=${source && source.id} name=${source && source.name} (of ${sources.length} screens)`
+                    `[capture] requested display id=${savedId || '(none)'} -> using source id=${source && source.id} display_id=${source && source.display_id} name=${source && source.name} (of ${sources.length} screens)`
+                );
+                console.log(
+                    '[capture] available screens: ' +
+                        sources
+                            .map(s => `{id=${s.id} display_id=${s.display_id} name=${s.name}}`)
+                            .join(', ')
                 );
                 callback({ video: source, audio: 'loopback' });
             });
